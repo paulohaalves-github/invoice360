@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Invoice360
 
-## Getting Started
+Aplicação Next.js que sincroniza faturas da **360Dialog** via e-mail IMAP, extrai os dados dos PDFs (incluindo o número WhatsApp) e permite acompanhar os custos por linha.
 
-First, run the development server:
+## O que faz
+
+1. Conecta na caixa de e-mail (IMAP)
+2. Filtra mensagens cujo assunto **contém** `Your 360dialog invoice`
+3. Baixa o PDF anexo e extrai: número da fatura, datas, cliente, número WhatsApp e totais
+4. Salva tudo em SQLite (`data/invoices.db`)
+5. Exibe resumo por número, com filtros e apelidos (ex.: `553133261400` → `CSP BH`)
+
+## Pré-requisitos
+
+- Node.js 20+
+- Conta de e-mail com acesso IMAP
+
+## Configuração
+
+```bash
+npm install
+cp .env.example .env
+```
+
+Edite o `.env` com as credenciais IMAP:
+
+
+| Variável              | Descrição                                | Padrão                   |
+| --------------------- | ---------------------------------------- | ------------------------ |
+| `IMAP_HOST`           | Servidor IMAP                            | —                        |
+| `IMAP_PORT`           | Porta                                    | `993`                    |
+| `IMAP_SECURE`         | TLS (`true`/`false`)                     | `true`                   |
+| `IMAP_USER`           | Usuário / e-mail                         | —                        |
+| `IMAP_PASS`           | Senha ou app password                    | —                        |
+| `IMAP_FOLDER`         | Pasta a varrer                           | `INBOX`                  |
+| `IMAP_SEARCH_SUBJECT` | Texto que o assunto deve conter          | `Your 360dialog invoice` |
+| `IMAP_MAX_MESSAGES`   | Quantos e-mails recentes varrer por sync | `500`                    |
+
+
+
+
+## Uso
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra [http://localhost:3001](http://localhost:3001) e clique em **Sincronizar e-mails**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Na tela você pode:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Filtrar por **número WhatsApp** e **período de emissão**
+- Ver o **resumo por número** (apelido, emissão, quantidade de faturas, total)
+- Definir **apelidos** para cada número.
 
-## Learn More
 
-To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+| Comando               | Descrição                                |
+| --------------------- | ---------------------------------------- |
+| `npm run dev`         | Servidor de desenvolvimento (porta 3001) |
+| `npm run build`       | Build de produção                        |
+| `npm start`           | Servidor de produção (porta 3001)        |
+| `npm run lint`        | ESLint                                   |
+| `npm run test:parser` | Testa o parser do PDF 360Dialog          |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+## Estrutura
+
+```
+app/
+  api/invoices/   # Listagem, filtros e resumo
+  api/sync/       # Sincronização IMAP
+  api/labels/     # Apelidos por número WhatsApp
+  components/     # Dashboard
+lib/
+  db.ts           # SQLite
+  imap-sync.ts    # Leitura IMAP + anexos
+  pdf-parser.ts   # Extração do PDF 360Dialog
+data/             # Banco e PDFs (ignorado no git)
+```
+
+
+
+## Dados locais
+
+- Banco: `data/invoices.db`
+- PDFs: `data/pdfs/`
+
+Esses arquivos ficam fora do versionamento. Não é necessário criar a pasta `data/` manualmente — ela é criada na primeira sincronização.
+
+## Observações
+
+- Rode preferencialmente em máquina local ou VPS com disco (SQLite + IMAP não se encaixam bem em serverless puro).
+- O filtro de assunto usa **contém** (não exige igualdade). Ex.: `Re: Your 360dialog invoice INV26-…` é importado.
+- E-mails já processados não são reimportados (`message_id` único).
+
