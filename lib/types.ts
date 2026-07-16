@@ -79,7 +79,7 @@ export interface WhatsappLabel {
 }
 
 export interface InvoiceFilters {
-  whatsappNumber?: string;
+  whatsappNumbers?: string[];
   issueDateFrom?: string;
   issueDateTo?: string;
 }

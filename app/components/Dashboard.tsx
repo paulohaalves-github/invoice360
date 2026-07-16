@@ -8,7 +8,7 @@ import type {
 } from "@/lib/types";
 
 type LoadFilters = {
-  whatsapp?: string;
+  whatsapp?: string[];
   issueFrom?: string;
   issueTo?: string;
 };
@@ -67,7 +67,7 @@ function displayNumber(
 
 export function Dashboard() {
   const [data, setData] = useState<ApiPayload | null>(null);
-  const [whatsapp, setWhatsapp] = useState("");
+  const [whatsappNumbers, setWhatsappNumbers] = useState<string[]>([]);
   const [issueFrom, setIssueFrom] = useState("");
   const [issueTo, setIssueTo] = useState("");
   const [loading, setLoading] = useState(true);
@@ -80,11 +80,11 @@ export function Dashboard() {
 
   const currentFilters = useMemo(
     (): LoadFilters => ({
-      whatsapp: whatsapp || undefined,
+      whatsapp: whatsappNumbers.length > 0 ? whatsappNumbers : undefined,
       issueFrom: issueFrom || undefined,
       issueTo: issueTo || undefined,
     }),
-    [whatsapp, issueFrom, issueTo],
+    [whatsappNumbers, issueFrom, issueTo],
   );
 
   const load = useCallback(async (filters: LoadFilters = {}) => {
@@ -92,7 +92,9 @@ export function Dashboard() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (filters.whatsapp) params.set("whatsapp", filters.whatsapp);
+      for (const number of filters.whatsapp ?? []) {
+        params.append("whatsapp", number);
+      }
       if (filters.issueFrom) params.set("issueFrom", filters.issueFrom);
       if (filters.issueTo) params.set("issueTo", filters.issueTo);
 
@@ -176,10 +178,20 @@ export function Dashboard() {
     setLabelDraft(data?.labels[number] ?? "");
   }
 
+  function toggleWhatsappNumber(number: string) {
+    setWhatsappNumbers((current) =>
+      current.includes(number)
+        ? current.filter((item) => item !== number)
+        : [...current, number],
+    );
+  }
+
   const labels = data?.labels ?? {};
   const stats = data?.stats;
   const monthly = data?.monthly ?? [];
-  const hasActiveFilters = Boolean(whatsapp || issueFrom || issueTo);
+  const hasActiveFilters = Boolean(
+    whatsappNumbers.length > 0 || issueFrom || issueTo,
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
@@ -238,22 +250,44 @@ export function Dashboard() {
         />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="flex flex-col gap-1 text-sm text-zinc-700">
-          Filtrar por número
-          <select
-            value={whatsapp}
-            onChange={(e) => setWhatsapp(e.target.value)}
-            className="h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-teal-700"
-          >
-            <option value="">Todos os números</option>
-            {(data?.numbers ?? []).map((n) => (
-              <option key={n} value={n}>
-                {displayNumber(n, labels, true)}
-              </option>
-            ))}
-          </select>
-        </label>
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]">
+        <div className="flex flex-col gap-1 text-sm text-zinc-700">
+          <div className="flex items-center justify-between gap-2">
+            <span>Filtrar por número</span>
+            {whatsappNumbers.length > 0 && (
+              <span className="text-xs text-zinc-500">
+                {whatsappNumbers.length} selecionado(s)
+              </span>
+            )}
+          </div>
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-zinc-300 bg-white px-3 py-2">
+            {(data?.numbers ?? []).length === 0 ? (
+              <p className="text-xs text-zinc-500">Nenhum número disponível</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {(data?.numbers ?? []).map((n) => {
+                  const checked = whatsappNumbers.includes(n);
+                  return (
+                    <li key={n}>
+                      <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-800">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleWhatsappNumber(n)}
+                          className="mt-0.5 accent-teal-800"
+                        />
+                        <span>{displayNumber(n, labels, true)}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500">
+            Nenhum marcado = todos os números.
+          </p>
+        </div>
 
         <label className="flex flex-col gap-1 text-sm text-zinc-700">
           Emissão de
@@ -279,7 +313,7 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => {
-              setWhatsapp("");
+              setWhatsappNumbers([]);
               setIssueFrom("");
               setIssueTo("");
             }}
@@ -388,7 +422,7 @@ export function Dashboard() {
                       <button
                         type="button"
                         className="text-teal-800 hover:underline"
-                        onClick={() => setWhatsapp(row.whatsappNumber)}
+                        onClick={() => toggleWhatsappNumber(row.whatsappNumber)}
                       >
                         {formatPhone(row.whatsappNumber)}
                       </button>

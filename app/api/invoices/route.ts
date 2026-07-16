@@ -13,15 +13,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function parseFilters(request: NextRequest): InvoiceFilters {
-  const whatsappNumber =
-    request.nextUrl.searchParams.get("whatsapp") ?? undefined;
+  const whatsappParams = request.nextUrl.searchParams.getAll("whatsapp");
+  const whatsappNumbers = whatsappParams
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
   const issueDateFrom =
     request.nextUrl.searchParams.get("issueFrom") ?? undefined;
   const issueDateTo =
     request.nextUrl.searchParams.get("issueTo") ?? undefined;
 
   return {
-    whatsappNumber: whatsappNumber || undefined,
+    whatsappNumbers:
+      whatsappNumbers.length > 0 ? [...new Set(whatsappNumbers)] : undefined,
     issueDateFrom: issueDateFrom || undefined,
     issueDateTo: issueDateTo || undefined,
   };

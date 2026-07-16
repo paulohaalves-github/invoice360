@@ -79,12 +79,23 @@ function buildInvoiceFilterClauses(filter?: InvoiceFilters) {
   const clauses: string[] = [];
   const params: string[] = [];
 
-  const number = filter?.whatsappNumber?.trim();
-  if (number) {
+  const numbers = (filter?.whatsappNumbers ?? [])
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+  if (numbers.length === 1) {
     clauses.push(
       `(whatsapp_number = ? OR id IN (SELECT invoice_id FROM invoice_lines WHERE whatsapp_number = ?))`,
     );
-    params.push(number, number);
+    params.push(numbers[0], numbers[0]);
+  } else if (numbers.length > 1) {
+    const placeholders = numbers.map(() => "?").join(", ");
+    clauses.push(
+      `(whatsapp_number IN (${placeholders}) OR id IN (
+         SELECT invoice_id FROM invoice_lines WHERE whatsapp_number IN (${placeholders})
+       ))`,
+    );
+    params.push(...numbers, ...numbers);
   }
 
   const issueFrom = filter?.issueDateFrom?.trim();
