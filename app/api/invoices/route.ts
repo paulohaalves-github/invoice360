@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getStats,
   getWhatsappLabelMap,
-  listInvoices,
   listWhatsappLabels,
   listWhatsappNumbers,
+  summarizeByMonth,
   summarizeByWhatsapp,
 } from "@/lib/db";
 import type { InvoiceFilters } from "@/lib/types";
@@ -32,15 +32,15 @@ export async function GET(request: NextRequest) {
     const filters = parseFilters(request);
     const labels = getWhatsappLabelMap();
 
-    const invoices = listInvoices(filters);
     const numbers = listWhatsappNumbers();
     const summary = summarizeByWhatsapp(filters);
+    const monthly = summarizeByMonth(filters);
     const stats = getStats(filters);
 
     return NextResponse.json({
-      invoices,
       numbers,
       summary,
+      monthly,
       stats,
       labels,
       labelList: listWhatsappLabels(),

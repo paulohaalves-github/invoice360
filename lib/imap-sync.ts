@@ -58,7 +58,12 @@ export async function syncInvoicesFromImap(): Promise<SyncResult> {
   const folder = process.env.IMAP_FOLDER?.trim() || "INBOX";
   const searchSubject =
     process.env.IMAP_SEARCH_SUBJECT?.trim() || "Your 360dialog invoice";
-  const maxScan = Number(process.env.IMAP_MAX_MESSAGES || 500);
+  // 0 ou vazio = sem limite (varre toda a pasta)
+  const maxScanRaw = process.env.IMAP_MAX_MESSAGES?.trim();
+  const maxScan =
+    maxScanRaw === undefined || maxScanRaw === "" || maxScanRaw === "0"
+      ? 0
+      : Number(maxScanRaw);
   const config = getImapConfig();
   const client = new ImapFlow(config);
   client.on("error", () => {
@@ -71,13 +76,14 @@ export async function syncInvoicesFromImap(): Promise<SyncResult> {
     const lock = await client.getMailboxLock(folder);
     try {
       // Busca todos os e-mails da pasta; filtra só pelo assunto no app.
-      const uids = await client.search({}, { uid: true });
+      const uids = await client.search({ all: true }, { uid: true });
 
       if (!uids || uids.length === 0) {
         return result;
       }
 
-      const toScan = [...uids].sort((a, b) => b - a).slice(0, maxScan);
+      const sorted = [...uids].sort((a, b) => b - a);
+      const toScan = maxScan > 0 ? sorted.slice(0, maxScan) : sorted;
       const matchingUids: number[] = [];
 
       for await (const message of client.fetch(

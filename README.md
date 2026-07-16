@@ -34,7 +34,7 @@ Edite o `.env` com as credenciais IMAP:
 | `IMAP_PASS`           | Senha ou app password                    | —                        |
 | `IMAP_FOLDER`         | Pasta a varrer                           | `INBOX`                  |
 | `IMAP_SEARCH_SUBJECT` | Texto que o assunto deve conter          | `Your 360dialog invoice` |
-| `IMAP_MAX_MESSAGES`   | Quantos e-mails recentes varrer por sync | `500`                    |
+| `IMAP_MAX_MESSAGES`   | Quantos e-mails recentes varrer (`0` = todos) | `0`                      |
 
 
 

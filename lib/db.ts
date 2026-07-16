@@ -6,6 +6,7 @@ import type {
   InvoiceFilters,
   InvoiceLine,
   InvoiceSummaryByNumber,
+  MonthlySummary,
   ParsedInvoice,
   WhatsappLabel,
 } from "./types";
@@ -319,6 +320,40 @@ export function summarizeByWhatsapp(
     totalAmount: Number(r.totalAmount),
     currency: r.currency,
     latestIssueDate: r.latestIssueDate,
+  }));
+}
+
+export function summarizeByMonth(filter?: InvoiceFilters): MonthlySummary[] {
+  const db = getDb();
+  const { where, params } = buildInvoiceFilterClauses(filter);
+  const baseWhere = where
+    ? `${where} AND issue_date IS NOT NULL AND issue_date != ''`
+    : `WHERE issue_date IS NOT NULL AND issue_date != ''`;
+
+  const rows = db
+    .prepare(
+      `SELECT
+         substr(issue_date, 1, 7) AS month,
+         COUNT(*) AS invoiceCount,
+         SUM(total) AS totalAmount,
+         currency
+       FROM invoices
+       ${baseWhere}
+       GROUP BY month, currency
+       ORDER BY month ASC`,
+    )
+    .all(...params) as Array<{
+      month: string;
+      invoiceCount: number;
+      totalAmount: number;
+      currency: string;
+    }>;
+
+  return rows.map((r) => ({
+    month: r.month,
+    invoiceCount: Number(r.invoiceCount),
+    totalAmount: Number(r.totalAmount),
+    currency: r.currency,
   }));
 }
 

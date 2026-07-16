@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { InvoiceSummaryByNumber, SyncResult } from "@/lib/types";
+import type {
+  InvoiceSummaryByNumber,
+  MonthlySummary,
+  SyncResult,
+} from "@/lib/types";
 
 type LoadFilters = {
   whatsapp?: string;
@@ -12,6 +16,7 @@ type LoadFilters = {
 type ApiPayload = {
   numbers: string[];
   summary: InvoiceSummaryByNumber[];
+  monthly: MonthlySummary[];
   stats: {
     invoiceCount: number;
     totalAmount: number;
@@ -28,13 +33,6 @@ function formatMoney(value: number, currency = "USD") {
   }).format(value);
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const [y, m, d] = value.split("-");
-  if (!y || !m || !d) return value;
-  return `${d}/${m}/${y}`;
-}
-
 function formatPhone(value: string | null) {
   if (!value) return "—";
   if (value.length === 12 && value.startsWith("55")) {
@@ -44,6 +42,16 @@ function formatPhone(value: string | null) {
     return `+${value.slice(0, 2)} (${value.slice(2, 4)}) ${value.slice(4, 9)}-${value.slice(9)}`;
   }
   return value;
+}
+
+function formatMonthLabel(month: string) {
+  const [y, m] = month.split("-");
+  if (!y || !m) return month;
+  const date = new Date(Number(y), Number(m) - 1, 1);
+  return date.toLocaleDateString("pt-BR", {
+    month: "short",
+    year: "2-digit",
+  });
 }
 
 function displayNumber(
@@ -170,6 +178,7 @@ export function Dashboard() {
 
   const labels = data?.labels ?? {};
   const stats = data?.stats;
+  const monthly = data?.monthly ?? [];
   const hasActiveFilters = Boolean(whatsapp || issueFrom || issueTo);
 
   return (
@@ -283,6 +292,23 @@ export function Dashboard() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold tracking-wide text-zinc-800 uppercase">
+          Evolução mensal
+        </h2>
+        {loading ? (
+          <p className="text-sm text-zinc-500">Carregando…</p>
+        ) : monthly.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center">
+            <p className="text-sm text-zinc-600">
+              Sem dados mensais para os filtros selecionados.
+            </p>
+          </div>
+        ) : (
+          <MonthlyBarChart data={monthly} />
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold tracking-wide text-zinc-800 uppercase">
           Resumo por número
         </h2>
         {loading ? (
@@ -300,7 +326,6 @@ export function Dashboard() {
                 <tr>
                   <th className="px-4 py-3 font-medium">Apelido</th>
                   <th className="px-4 py-3 font-medium">WhatsApp</th>
-                  <th className="px-4 py-3 font-medium">Emissão</th>
                   <th className="px-4 py-3 font-medium">Faturas</th>
                   <th className="px-4 py-3 font-medium">Total</th>
                 </tr>
@@ -369,9 +394,6 @@ export function Dashboard() {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-zinc-700">
-                      {formatDate(row.latestIssueDate)}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">
                       {row.invoiceCount}
                     </td>
                     <td className="px-4 py-3 text-zinc-900">
@@ -393,6 +415,66 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-zinc-200 bg-white px-4 py-4">
       <p className="text-xs tracking-wide text-zinc-500 uppercase">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-zinc-900">{value}</p>
+    </div>
+  );
+}
+
+function MonthlyBarChart({ data }: { data: MonthlySummary[] }) {
+  // Agrega por mês caso haja mais de uma moeda
+  const byMonth = new Map<string, { month: string; totalAmount: number; invoiceCount: number; currency: string }>();
+  for (const item of data) {
+    const current = byMonth.get(item.month);
+    if (current) {
+      current.totalAmount += item.totalAmount;
+      current.invoiceCount += item.invoiceCount;
+    } else {
+      byMonth.set(item.month, {
+        month: item.month,
+        totalAmount: item.totalAmount,
+        invoiceCount: item.invoiceCount,
+        currency: item.currency,
+      });
+    }
+  }
+  const series = [...byMonth.values()].sort((a, b) =>
+    a.month.localeCompare(b.month),
+  );
+  const maxAmount = Math.max(...series.map((d) => d.totalAmount), 1);
+  const currency = series[0]?.currency ?? "USD";
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5">
+      <div className="flex h-64 items-end gap-2 overflow-x-auto sm:gap-3">
+        {series.map((item) => {
+          const heightPct = Math.max((item.totalAmount / maxAmount) * 100, 3);
+          return (
+            <div
+              key={item.month}
+              className="flex h-full min-w-[3.25rem] flex-1 flex-col items-center sm:min-w-[4rem]"
+              title={`${formatMonthLabel(item.month)}: ${formatMoney(item.totalAmount, item.currency)} · ${item.invoiceCount} fatura(s)`}
+            >
+              <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-end">
+                <span className="mb-1 text-[10px] font-medium leading-none text-zinc-700 sm:text-[11px]">
+                  {formatMoney(item.totalAmount, currency)}
+                </span>
+                <div
+                  className="w-full max-w-16 rounded-t-md bg-teal-700"
+                  style={{ height: `${heightPct}%` }}
+                />
+              </div>
+              <span className="mt-2 w-full truncate text-center text-[11px] capitalize text-zinc-600">
+                {formatMonthLabel(item.month)}
+              </span>
+              <span className="text-[10px] text-zinc-400">
+                {item.invoiceCount} fat.
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-4 text-xs text-zinc-500">
+        Evolução mensal do valor total das faturas (por data de emissão).
+      </p>
     </div>
   );
 }

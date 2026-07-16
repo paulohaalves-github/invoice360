@@ -66,6 +66,13 @@ export interface InvoiceSummaryByNumber {
   latestIssueDate: string | null;
 }
 
+export interface MonthlySummary {
+  month: string; // YYYY-MM
+  invoiceCount: number;
+  totalAmount: number;
+  currency: string;
+}
+
 export interface WhatsappLabel {
   whatsappNumber: string;
   displayName: string;
