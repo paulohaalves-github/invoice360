@@ -9,6 +9,23 @@ function matchFirst(text: string, pattern: RegExp): string | null {
   return text.match(pattern)?.[1]?.trim() ?? null;
 }
 
+function extractCustomerEmail(text: string): string | null {
+  const flat = text.replace(/\s+/g, " ");
+  const afterBillTo = flat.split(/bill to/i)[1] ?? "";
+  const emails =
+    afterBillTo
+      .slice(0, 280)
+      .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
+  const customer = emails.find((email) => !/360dialog\.com$/i.test(email));
+  return customer?.toLowerCase() ?? null;
+}
+
+function extractWhatsappNumber(text: string): string | null {
+  return (
+    text.match(/(?:phone(?:\s+number)?)\s*:\s*(\d{10,15})/i)?.[1] ?? null
+  );
+}
+
 function detectCurrency(text: string): string {
   const match = text.match(/\b(USD|EUR|BRL|GBP)\b/i);
   return match?.[1]?.toUpperCase() ?? "USD";
@@ -38,9 +55,10 @@ function buildLines(
   const lines: ParsedInvoiceLine[] = [];
   const grossAmounts = extractGrossAmounts(text);
 
-  const hasUsage = /whatsapp usage|prepayment for whatsapp|Phone:\s*\d+/i.test(
-    text,
-  );
+  const hasUsage =
+    /whatsapp usage|prepayment for whatsapp|(?:phone(?:\s+number)?)\s*:\s*\d+/i.test(
+      text,
+    );
   const hasFee = /Transaction Fee/i.test(text);
 
   let usageAmount: number | null = null;
@@ -128,8 +146,9 @@ export function parse360DialogInvoiceText(text: string): ParsedInvoice {
   const customerName =
     matchFirst(normalized, /Bill to\s*\n+\s*([^\n]+)/i) ??
     matchFirst(normalized, /Bill to\s+([^\n]+)/i);
+  const customerEmail = extractCustomerEmail(normalized);
 
-  const phone = matchFirst(normalized, /Phone:\s*(\d{10,15})/i);
+  const phone = extractWhatsappNumber(normalized);
   const currency = detectCurrency(normalized);
 
   const subtotalRaw = matchFirst(
@@ -162,6 +181,7 @@ export function parse360DialogInvoiceText(text: string): ParsedInvoice {
     issueDate,
     dueDate,
     customerName,
+    customerEmail,
     currency,
     subtotal,
     total,

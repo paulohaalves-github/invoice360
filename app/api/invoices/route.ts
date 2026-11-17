@@ -1,51 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  backfillCustomerEmails,
+  backfillMissingWhatsappNumbers,
   getStats,
   getWhatsappLabelMap,
+  listInvoiceRows,
   listWhatsappLabels,
   listWhatsappNumbers,
   summarizeByMonth,
   summarizeByWhatsapp,
+  summarizeUnassigned,
 } from "@/lib/db";
-import type { InvoiceFilters } from "@/lib/types";
+import { requireSession } from "@/lib/auth";
+import { parseInvoiceFilters } from "@/lib/invoice-filters";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function parseFilters(request: NextRequest): InvoiceFilters {
-  const whatsappParams = request.nextUrl.searchParams.getAll("whatsapp");
-  const whatsappNumbers = whatsappParams
-    .flatMap((value) => value.split(","))
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const issueDateFrom =
-    request.nextUrl.searchParams.get("issueFrom") ?? undefined;
-  const issueDateTo =
-    request.nextUrl.searchParams.get("issueTo") ?? undefined;
-
-  return {
-    whatsappNumbers:
-      whatsappNumbers.length > 0 ? [...new Set(whatsappNumbers)] : undefined,
-    issueDateFrom: issueDateFrom || undefined,
-    issueDateTo: issueDateTo || undefined,
-  };
-}
-
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   try {
-    const filters = parseFilters(request);
+    await backfillCustomerEmails();
+    await backfillMissingWhatsappNumbers();
+    const filters = parseInvoiceFilters(request.nextUrl.searchParams);
     const labels = getWhatsappLabelMap();
 
     const numbers = listWhatsappNumbers();
     const summary = summarizeByWhatsapp(filters);
+    const unassigned = summarizeUnassigned(filters);
     const monthly = summarizeByMonth(filters);
+    const invoices = listInvoiceRows(filters);
     const stats = getStats(filters);
 
     return NextResponse.json({
       numbers,
       summary,
+      unassigned,
       monthly,
+      invoices,
       stats,
       labels,
       labelList: listWhatsappLabels(),

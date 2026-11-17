@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth";
 import { deleteWhatsappLabel, setWhatsappLabel } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   try {
     const body = (await request.json()) as {
       whatsappNumber?: string;
@@ -25,6 +29,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   try {
     const whatsappNumber =
       request.nextUrl.searchParams.get("whatsapp") ?? undefined;

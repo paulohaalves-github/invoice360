@@ -36,6 +36,7 @@ const asserts: Array<[string, boolean]> = [
   ["issueDate", parsed.issueDate === "2026-07-15"],
   ["dueDate", parsed.dueDate === "2026-07-18"],
   ["customerName", parsed.customerName === "Grupo Express"],
+  ["customerEmail", parsed.customerEmail === "ti@bkvexpressbh.com.br"],
   ["phone", parsed.whatsappNumber === "553133261400"],
   ["total", parsed.total === 21.63],
   ["currency", parsed.currency === "USD"],
@@ -44,11 +45,39 @@ const asserts: Array<[string, boolean]> = [
   ["fee", parsed.lines[1]?.amount === 0.83],
 ];
 
+const CLOSING = `
+Invoice number: INV26-237847
+Date of issue: 2026-11-01
+Date due: 2026-11-04
+Bill to Grupo Express ti@bkvexpressbh.com.br
+WhatsApp usage costs - 10/2026 for phone number: 553123420610
+1.00 202.27 202.27 0.00 USD 202.27 USD
+Settled with credit balance
+1.00 -202.27 -202.27 0.00 USD -202.27 USD
+Transaction Fee
+1.00 0.00 0.00 0.00 USD 0.00 USD
+Subtotal 0.00 USD
+Total 0.00 USD
+`;
+
+const closing = parse360DialogInvoiceText(CLOSING);
+asserts.push(
+  ["closingPhone", closing.whatsappNumber === "553123420610"],
+  ["closingTotal", closing.total === 0],
+  ["closingUsage", closing.lines[0]?.amount === 202.27],
+  ["closingLinePhone", closing.lines[0]?.whatsappNumber === "553123420610"],
+);
+
 const failed = asserts.filter(([, ok]) => !ok);
 if (failed.length > 0) {
   console.error("Parser falhou:", failed.map(([name]) => name));
-  console.error(JSON.stringify(parsed, null, 2));
+  console.error(JSON.stringify({ parsed, closing }, null, 2));
   process.exit(1);
 }
 
-console.log("Parser OK:", parsed.invoiceNumber, parsed.whatsappNumber, parsed.total);
+console.log(
+  "Parser OK:",
+  parsed.invoiceNumber,
+  parsed.whatsappNumber,
+  closing.whatsappNumber,
+);
