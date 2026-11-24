@@ -74,7 +74,10 @@ export async function buildInvoicesWorkbook(input: {
       displayName: row.whatsappNumber
         ? (input.labels[row.whatsappNumber] ?? "")
         : "",
-      whatsappNumber: row.whatsappNumber ?? "",
+      whatsappNumber:
+        row.whatsappNumbers.length > 0
+          ? row.whatsappNumbers.join(", ")
+          : (row.whatsappNumber ?? ""),
       customerEmail: row.customerEmail ?? "",
       usageAmount: row.usageAmount,
       feeAmount: row.feeAmount,

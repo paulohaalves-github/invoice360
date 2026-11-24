@@ -96,6 +96,7 @@ export interface InvoiceRow {
   usageAmount: number;
   feeAmount: number;
   whatsappNumber: string | null;
+  whatsappNumbers: string[];
   invoiceKind: InvoiceKind;
   settledWithCredit: boolean;
   hasPdf: boolean;

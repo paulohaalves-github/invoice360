@@ -134,7 +134,13 @@ function buildInvoiceFilterClauses(filter?: InvoiceFilters) {
   const params: string[] = [];
 
   if (filter?.unassignedOnly) {
-    clauses.push(`(whatsapp_number IS NULL OR whatsapp_number = '')`);
+    clauses.push(
+      `(whatsapp_number IS NULL OR whatsapp_number = '')
+       AND id NOT IN (
+         SELECT invoice_id FROM invoice_lines
+         WHERE whatsapp_number IS NOT NULL AND whatsapp_number != ''
+       )`,
+    );
   } else {
     const numbers = (filter?.whatsappNumbers ?? [])
       .map((n) => n.trim())
@@ -220,6 +226,30 @@ export function getPdfDir() {
   return PDF_DIR;
 }
 
+function replaceInvoiceLines(
+  invoiceId: number,
+  lines: ParsedInvoice["lines"],
+): void {
+  const db = getDb();
+  const insertLine = db.prepare(`
+    INSERT INTO invoice_lines (
+      invoice_id, whatsapp_number, description, line_type, quantity, unit_price, amount
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.prepare(`DELETE FROM invoice_lines WHERE invoice_id = ?`).run(invoiceId);
+  for (const line of lines) {
+    insertLine.run(
+      invoiceId,
+      line.whatsappNumber,
+      line.description,
+      line.lineType,
+      line.quantity,
+      line.unitPrice,
+      line.amount,
+    );
+  }
+}
+
 export function emailExists(messageId: string): boolean {
   const row = getDb()
     .prepare("SELECT id FROM emails WHERE message_id = ?")
@@ -266,17 +296,42 @@ export function saveInvoice(input: {
          WHERE id = ? AND (customer_email IS NULL OR customer_email = '')`,
       ).run(input.parsed.customerEmail, existing.id);
     }
-    if (input.parsed.whatsappNumber) {
+    const linePhones = [
+      ...new Set(
+        input.parsed.lines
+          .map((line) => line.whatsappNumber)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const headerPhone =
+      input.parsed.whatsappNumber ??
+      (linePhones.length === 1 ? linePhones[0] : null);
+
+    if (headerPhone) {
       db.prepare(
         `UPDATE invoices
          SET whatsapp_number = ?
          WHERE id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
-      ).run(input.parsed.whatsappNumber, existing.id);
-      db.prepare(
-        `UPDATE invoice_lines
-         SET whatsapp_number = ?
-         WHERE invoice_id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
-      ).run(input.parsed.whatsappNumber, existing.id);
+      ).run(headerPhone, existing.id);
+    }
+
+    if (linePhones.length > 0) {
+      const blankLines = db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM invoice_lines
+           WHERE invoice_id = ?
+             AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
+        )
+        .get(existing.id) as { c: number };
+      if (Number(blankLines.c) > 0) {
+        replaceInvoiceLines(existing.id, input.parsed.lines);
+      } else if (input.parsed.whatsappNumber) {
+        db.prepare(
+          `UPDATE invoice_lines
+           SET whatsapp_number = ?
+           WHERE invoice_id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
+        ).run(input.parsed.whatsappNumber, existing.id);
+      }
     }
     return { invoiceId: existing.id, created: false };
   }
@@ -407,33 +462,47 @@ export function summarizeByWhatsapp(
 ): InvoiceSummaryByNumber[] {
   const db = getDb();
   const { where, params } = buildInvoiceFilterClauses(filter);
-  const baseWhere = where
-    ? `${where} AND invoices.whatsapp_number IS NOT NULL AND invoices.whatsapp_number != ''`
-    : `WHERE invoices.whatsapp_number IS NOT NULL AND invoices.whatsapp_number != ''`;
+  const invoiceWhere = where
+    ? `AND invoices.id IN (SELECT id FROM invoices ${where})`
+    : "";
 
   const rows = db
     .prepare(
       `SELECT
-         invoices.whatsapp_number AS whatsappNumber,
-         COUNT(*) AS invoiceCount,
-         SUM(invoices.total) AS totalAmount,
+         invoice_lines.whatsapp_number AS whatsappNumber,
+         COUNT(DISTINCT invoices.id) AS invoiceCount,
+         COALESCE(SUM(invoice_lines.amount), 0) AS totalAmount,
          invoices.currency AS currency,
          MAX(invoices.issue_date) AS latestIssueDate,
-         COALESCE(SUM(lines.usage_amount), 0) AS usageAmount,
-         COALESCE(SUM(lines.fee_amount), 0) AS feeAmount,
+         COALESCE(
+           SUM(CASE WHEN invoice_lines.line_type = 'usage' THEN invoice_lines.amount ELSE 0 END),
+           0
+         ) AS usageAmount,
+         COALESCE(
+           SUM(CASE WHEN invoice_lines.line_type = 'fee' THEN invoice_lines.amount ELSE 0 END),
+           0
+         ) AS feeAmount,
          (
            SELECT recent.customer_email
            FROM invoices AS recent
-           WHERE recent.whatsapp_number = invoices.whatsapp_number
-             AND recent.customer_email IS NOT NULL
+           WHERE recent.customer_email IS NOT NULL
              AND recent.customer_email != ''
+             AND (
+               recent.whatsapp_number = invoice_lines.whatsapp_number
+               OR recent.id IN (
+                 SELECT invoice_id FROM invoice_lines AS numbered
+                 WHERE numbered.whatsapp_number = invoice_lines.whatsapp_number
+               )
+             )
            ORDER BY recent.issue_date DESC, recent.id DESC
            LIMIT 1
          ) AS customerEmail
-       FROM invoices
-       ${LINE_AMOUNTS_JOIN}
-       ${baseWhere}
-       GROUP BY invoices.whatsapp_number, invoices.currency
+       FROM invoice_lines
+       INNER JOIN invoices ON invoices.id = invoice_lines.invoice_id
+       WHERE invoice_lines.whatsapp_number IS NOT NULL
+         AND invoice_lines.whatsapp_number != ''
+         ${invoiceWhere}
+       GROUP BY invoice_lines.whatsapp_number, invoices.currency
        ORDER BY latestIssueDate DESC, totalAmount DESC`,
     )
     .all(...params) as Array<{
@@ -470,10 +539,16 @@ export function summarizeByWhatsapp(
   });
 
   const usageTotal = mapped.reduce((sum, row) => sum + row.usageAmount, 0);
+  const amountTotal = mapped.reduce((sum, row) => sum + row.totalAmount, 0);
   return mapped
     .map((row) => ({
       ...row,
-      usageShare: usageTotal > 0 ? row.usageAmount / usageTotal : 0,
+      usageShare:
+        usageTotal > 0
+          ? row.usageAmount / usageTotal
+          : amountTotal > 0
+            ? row.totalAmount / amountTotal
+            : 0,
     }))
     .sort(
       (a, b) =>
@@ -543,7 +618,14 @@ export function listInvoiceRows(filter?: InvoiceFilters): InvoiceRow[] {
          COALESCE(lines.usage_amount, 0) AS usageAmount,
          COALESCE(lines.fee_amount, 0) AS feeAmount,
          COALESCE(lines.is_prepayment, 0) AS isPrepayment,
-         COALESCE(lines.is_usage_costs, 0) AS isUsageCosts
+         COALESCE(lines.is_usage_costs, 0) AS isUsageCosts,
+         (
+           SELECT GROUP_CONCAT(DISTINCT numbered.whatsapp_number)
+           FROM invoice_lines AS numbered
+           WHERE numbered.invoice_id = invoices.id
+             AND numbered.whatsapp_number IS NOT NULL
+             AND numbered.whatsapp_number != ''
+         ) AS lineNumbers
        FROM invoices
        ${LINE_AMOUNTS_JOIN}
        ${where}
@@ -564,11 +646,22 @@ export function listInvoiceRows(filter?: InvoiceFilters): InvoiceRow[] {
       feeAmount: number;
       isPrepayment: number;
       isUsageCosts: number;
+      lineNumbers: string | null;
     }>;
 
   return rows.map((row) => {
     const usageAmount = Number(row.usageAmount);
     const total = Number(row.total);
+    const whatsappNumbers = [
+      ...new Set(
+        [
+          ...(row.whatsappNumber ? [row.whatsappNumber] : []),
+          ...(row.lineNumbers ? row.lineNumbers.split(",") : []),
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    ];
     return {
       id: Number(row.id),
       invoiceNumber: row.invoiceNumber,
@@ -580,7 +673,8 @@ export function listInvoiceRows(filter?: InvoiceFilters): InvoiceRow[] {
       total,
       usageAmount,
       feeAmount: Number(row.feeAmount),
-      whatsappNumber: row.whatsappNumber,
+      whatsappNumber: row.whatsappNumber ?? whatsappNumbers[0] ?? null,
+      whatsappNumbers,
       invoiceKind: classifyInvoiceKind(row),
       settledWithCredit: usageAmount > 0 && Math.abs(total) < 0.005,
       hasPdf: Boolean(row.pdfPath),
@@ -638,19 +732,25 @@ export async function backfillCustomerEmails(): Promise<void> {
   }
 }
 
-let whatsappBackfillDone = false;
+let channelWhatsappBackfillDone = false;
 
 export async function backfillMissingWhatsappNumbers(): Promise<void> {
-  if (whatsappBackfillDone) return;
-  whatsappBackfillDone = true;
+  if (channelWhatsappBackfillDone) return;
+  channelWhatsappBackfillDone = true;
 
   const db = getDb();
   const rows = db
     .prepare(
       `SELECT id, pdf_path AS pdfPath
        FROM invoices
-       WHERE (whatsapp_number IS NULL OR whatsapp_number = '')
-         AND pdf_path IS NOT NULL AND pdf_path != ''`,
+       WHERE pdf_path IS NOT NULL AND pdf_path != ''
+         AND (
+           whatsapp_number IS NULL OR whatsapp_number = ''
+           OR id IN (
+             SELECT invoice_id FROM invoice_lines
+             WHERE whatsapp_number IS NULL OR whatsapp_number = ''
+           )
+         )`,
     )
     .all() as Array<{ id: number; pdfPath: string }>;
 
@@ -658,21 +758,38 @@ export async function backfillMissingWhatsappNumbers(): Promise<void> {
     `UPDATE invoices SET whatsapp_number = ?
      WHERE id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
   );
-  const updateLines = db.prepare(
-    `UPDATE invoice_lines SET whatsapp_number = ?
-     WHERE invoice_id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
-  );
 
   for (const row of rows) {
     if (!fs.existsSync(row.pdfPath)) continue;
     try {
       const parsed = await parse360DialogPdf(fs.readFileSync(row.pdfPath));
-      if (!parsed.whatsappNumber) continue;
-      updateInvoice.run(parsed.whatsappNumber, row.id);
-      updateLines.run(parsed.whatsappNumber, row.id);
+      const linePhones = [
+        ...new Set(
+          parsed.lines
+            .map((line) => line.whatsappNumber)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ];
+      if (linePhones.length === 0 && !parsed.whatsappNumber) continue;
+
+      const headerPhone =
+        parsed.whatsappNumber ??
+        (linePhones.length === 1 ? linePhones[0] : null);
+      if (headerPhone) {
+        updateInvoice.run(headerPhone, row.id);
+      }
+
+      if (linePhones.length > 0) {
+        replaceInvoiceLines(row.id, parsed.lines);
+      } else if (parsed.whatsappNumber) {
+        db.prepare(
+          `UPDATE invoice_lines SET whatsapp_number = ?
+           WHERE invoice_id = ? AND (whatsapp_number IS NULL OR whatsapp_number = '')`,
+        ).run(parsed.whatsappNumber, row.id);
+      }
     } catch {
       // A próxima inicialização do servidor tenta de novo.
-      whatsappBackfillDone = false;
+      channelWhatsappBackfillDone = false;
     }
   }
 }

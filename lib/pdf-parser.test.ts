@@ -68,10 +68,48 @@ asserts.push(
   ["closingLinePhone", closing.lines[0]?.whatsappNumber === "553123420610"],
 );
 
+const CHANNELS = `
+Invoice number: INV26-CHANNEL
+Date of issue: 2026-11-01
+Bill to Grupo Express ti@bkvexpressbh.com.br
+Basic WhatsApp Channel | 553133261400
+2026-11-01 - 2026-11-30
+1.00 15.00 15.00 0.00 USD 15.00 USD
+Basic WhatsApp Channel | 553192678466
+2026-11-01 - 2026-11-30
+1.00 15.00 15.00 0.00 USD 15.00 USD
+Basic WhatsApp Channel | 553123420610
+2026-11-01 - 2026-11-30
+1.00 15.00 15.00 0.00 USD 15.00 USD
+Basic WhatsApp Channel | 553125591649
+2026-11-01 - 2026-11-30
+1.00 15.00 15.00 0.00 USD 15.00 USD
+Basic WhatsApp Channel | 553193252484
+2026-11-01 - 2026-11-30
+1.00 15.00 15.00 0.00 USD 15.00 USD
+Transaction Fee
+1.00 0.00 0.00 0.00 USD 0.00 USD
+Subtotal 75.00 USD
+Total 75.00 USD
+`;
+
+const channels = parse360DialogInvoiceText(CHANNELS);
+const channelPhones = channels.lines
+  .map((line) => line.whatsappNumber)
+  .filter(Boolean);
+asserts.push(
+  ["channelHeaderPhone", channels.whatsappNumber === null],
+  ["channelTotal", channels.total === 75],
+  ["channelLineCount", channels.lines.length === 6],
+  ["channelPhoneCount", channelPhones.length === 5],
+  ["channelFirstPhone", channelPhones[0] === "553133261400"],
+  ["channelAmount", channels.lines[0]?.amount === 15],
+);
+
 const failed = asserts.filter(([, ok]) => !ok);
 if (failed.length > 0) {
   console.error("Parser falhou:", failed.map(([name]) => name));
-  console.error(JSON.stringify({ parsed, closing }, null, 2));
+  console.error(JSON.stringify({ parsed, closing, channels }, null, 2));
   process.exit(1);
 }
 
@@ -80,4 +118,5 @@ console.log(
   parsed.invoiceNumber,
   parsed.whatsappNumber,
   closing.whatsappNumber,
+  `channels=${channelPhones.length}`,
 );

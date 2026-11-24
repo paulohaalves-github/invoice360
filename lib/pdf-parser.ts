@@ -26,6 +26,40 @@ function extractWhatsappNumber(text: string): string | null {
   );
 }
 
+function extractChannelLines(text: string): ParsedInvoiceLine[] {
+  const lines: ParsedInvoiceLine[] = [];
+  const pattern =
+    /Basic\s+WhatsApp\s+Channel\s*\|\s*(\d{10,15})[\s\S]{0,160}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/gi;
+
+  for (const match of text.matchAll(pattern)) {
+    const phone = match[1];
+    const quantity = parseAmount(match[2]);
+    const unitPrice = parseAmount(match[3]);
+    const amount = parseAmount(match[6]);
+    if (!phone || !Number.isFinite(amount)) continue;
+    lines.push({
+      whatsappNumber: phone,
+      description: `Basic WhatsApp Channel | ${phone}`,
+      lineType: "other",
+      quantity: Number.isFinite(quantity) ? quantity : 1,
+      unitPrice: Number.isFinite(unitPrice) ? unitPrice : amount,
+      amount,
+    });
+  }
+
+  return lines;
+}
+
+function uniquePhones(lines: ParsedInvoiceLine[]): string[] {
+  return [
+    ...new Set(
+      lines
+        .map((line) => line.whatsappNumber)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+}
+
 function detectCurrency(text: string): string {
   const match = text.match(/\b(USD|EUR|BRL|GBP)\b/i);
   return match?.[1]?.toUpperCase() ?? "USD";
@@ -34,7 +68,7 @@ function detectCurrency(text: string): string {
 function extractGrossAmounts(text: string): number[] {
   // Coluna VAT "0.00 USD" seguida do Amount (Gross) "20.80 USD"
   const fromPairs = [
-    ...text.matchAll(/0\.00\s+USD\s+([\d.,]+)\s+USD/gi),
+    ...text.matchAll(/0\.00\s+USD\s+([-\d.,]+)\s+USD/gi),
   ].map((m) => parseAmount(m[1]));
 
   if (fromPairs.length > 0) return fromPairs;
@@ -47,11 +81,41 @@ function extractGrossAmounts(text: string): number[] {
   return all;
 }
 
+function extractFeeLine(
+  text: string,
+  phone: string | null,
+): ParsedInvoiceLine | null {
+  if (!/Transaction Fee/i.test(text)) return null;
+
+  const feeMatch = text.match(
+    /Transaction Fee[\s\S]{0,120}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/i,
+  );
+  if (!feeMatch) return null;
+
+  const amount = parseAmount(feeMatch[5]);
+  if (!Number.isFinite(amount)) return null;
+
+  return {
+    whatsappNumber: phone,
+    description: "Transaction Fee",
+    lineType: "fee",
+    quantity: parseAmount(feeMatch[1]) || 1,
+    unitPrice: parseAmount(feeMatch[2]),
+    amount,
+  };
+}
+
 function buildLines(
   text: string,
   phone: string | null,
   currency: string,
 ): ParsedInvoiceLine[] {
+  const channelLines = extractChannelLines(text);
+  if (channelLines.length > 0) {
+    const fee = extractFeeLine(text, null);
+    return fee ? [...channelLines, fee] : channelLines;
+  }
+
   const lines: ParsedInvoiceLine[] = [];
   const grossAmounts = extractGrossAmounts(text);
 
@@ -166,6 +230,9 @@ export function parse360DialogInvoiceText(text: string): ParsedInvoice {
   let total = totalRaw ? parseAmount(totalRaw) : null;
 
   const lines = buildLines(normalized, phone, currency);
+  const phones = uniquePhones(lines);
+  const whatsappNumber =
+    phone ?? (phones.length === 1 ? phones[0] : null);
 
   if (total == null) {
     const sum = lines.reduce((acc, line) => acc + line.amount, 0);
@@ -185,7 +252,7 @@ export function parse360DialogInvoiceText(text: string): ParsedInvoice {
     currency,
     subtotal,
     total,
-    whatsappNumber: phone,
+    whatsappNumber,
     lines,
     rawText: normalized,
   };

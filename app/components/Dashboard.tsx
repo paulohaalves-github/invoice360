@@ -949,9 +949,19 @@ export function Dashboard() {
                         {kindLabel(invoice.invoiceKind)}
                       </td>
                       <td className="px-4 py-3 text-zinc-700">
-                        {invoice.whatsappNumber
-                          ? displayNumber(invoice.whatsappNumber, labels, true)
-                          : "—"}
+                        {invoice.whatsappNumbers.length > 1 ? (
+                          <span
+                            title={invoice.whatsappNumbers
+                              .map((number) => displayNumber(number, labels, true))
+                              .join("\n")}
+                          >
+                            {invoice.whatsappNumbers.length} números
+                          </span>
+                        ) : invoice.whatsappNumbers[0] ? (
+                          displayNumber(invoice.whatsappNumbers[0], labels, true)
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-3 text-zinc-700">
                         {formatMoney(invoice.usageAmount, invoice.currency)}
