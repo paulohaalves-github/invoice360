@@ -173,11 +173,42 @@ asserts.push(
   ["wabaLegacyAmount", wabaLegacy.lines[0]?.amount === 15],
 );
 
+const PREMIUM = `
+Invoice number: INV25-109499
+Date of issue: 2025-08-18
+Bill to Grupo Multifix rodrigo.mattos@multifix.com.br
+Description Quantity Unit price Amount
+Premium WABA | 558231420832
+2025-08-18 - 2025-08-31
+0.43 49.00 21.04 USD
+Transaction Fee
+1.00 0.00 0.00 USD
+Subtotal 21.04 USD
+Taxes NA 0.00 USD
+Total 21.04 USD
+`;
+
+const premium = parse360DialogInvoiceText(PREMIUM);
+asserts.push(
+  ["premiumPhone", premium.whatsappNumber === "558231420832"],
+  ["premiumTotal", premium.total === 21.04],
+  ["premiumLines", premium.lines.length === 2],
+  ["premiumAmount", premium.lines[0]?.amount === 21.04],
+  [
+    "premiumDescription",
+    premium.lines[0]?.description === "Premium WABA | 558231420832",
+  ],
+);
+
 const failed = asserts.filter(([, ok]) => !ok);
 if (failed.length > 0) {
   console.error("Parser falhou:", failed.map(([name]) => name));
   console.error(
-    JSON.stringify({ parsed, closing, channels, waba, wabaLegacy }, null, 2),
+    JSON.stringify(
+      { parsed, closing, channels, waba, wabaLegacy, premium },
+      null,
+      2,
+    ),
   );
   process.exit(1);
 }
@@ -190,4 +221,5 @@ console.log(
   `channels=${channelPhones.length}`,
   `waba=${wabaPhones.length}`,
   `wabaLegacy=${wabaLegacyPhones.length}`,
+  `premium=${premium.whatsappNumber}`,
 );

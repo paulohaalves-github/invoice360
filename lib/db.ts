@@ -732,11 +732,11 @@ export async function backfillCustomerEmails(): Promise<void> {
   }
 }
 
-let wabaLegacyLayoutBackfillDone = false;
+let premiumWabaBackfillDone = false;
 
 export async function backfillMissingWhatsappNumbers(): Promise<void> {
-  if (wabaLegacyLayoutBackfillDone) return;
-  wabaLegacyLayoutBackfillDone = true;
+  if (premiumWabaBackfillDone) return;
+  premiumWabaBackfillDone = true;
 
   const db = getDb();
   const rows = db
@@ -789,7 +789,7 @@ export async function backfillMissingWhatsappNumbers(): Promise<void> {
       }
     } catch {
       // A próxima inicialização do servidor tenta de novo.
-      wabaLegacyLayoutBackfillDone = false;
+      premiumWabaBackfillDone = false;
     }
   }
 }
