@@ -136,10 +136,49 @@ asserts.push(
   ["wabaDescription", waba.lines[0]?.description === "Basic WABA | 552133118888"],
 );
 
+const WABA_LEGACY = `
+Invoice
+Invoice number: INV25-175568
+Date of issue: 2025-12-01
+Bill to
+Grupo Multifix
+ti@multifix.com.br
+Description Quantity Unit price Amount
+Basic WABA | 558231420832
+2025-12-01 - 2025-12-31
+1.00 15.00 15.00 USD
+Basic WABA | 552136192400
+2025-12-01 - 2025-12-31
+1.00 15.00 15.00 USD
+Basic WABA | 552133118888
+2025-12-01 - 2025-12-31
+1.00 15.00 15.00 USD
+Transaction Fee
+1.00 0.00 0.00 USD
+Subtotal 45.00 USD
+Taxes NA 0.00 USD
+Total 45.00 USD
+`;
+
+const wabaLegacy = parse360DialogInvoiceText(WABA_LEGACY);
+const wabaLegacyPhones = wabaLegacy.lines
+  .map((line) => line.whatsappNumber)
+  .filter(Boolean);
+asserts.push(
+  ["wabaLegacyHeader", wabaLegacy.whatsappNumber === null],
+  ["wabaLegacyTotal", wabaLegacy.total === 45],
+  ["wabaLegacyLines", wabaLegacy.lines.length === 4],
+  ["wabaLegacyPhones", wabaLegacyPhones.length === 3],
+  ["wabaLegacyFirst", wabaLegacyPhones[0] === "558231420832"],
+  ["wabaLegacyAmount", wabaLegacy.lines[0]?.amount === 15],
+);
+
 const failed = asserts.filter(([, ok]) => !ok);
 if (failed.length > 0) {
   console.error("Parser falhou:", failed.map(([name]) => name));
-  console.error(JSON.stringify({ parsed, closing, channels, waba }, null, 2));
+  console.error(
+    JSON.stringify({ parsed, closing, channels, waba, wabaLegacy }, null, 2),
+  );
   process.exit(1);
 }
 
@@ -150,4 +189,5 @@ console.log(
   closing.whatsappNumber,
   `channels=${channelPhones.length}`,
   `waba=${wabaPhones.length}`,
+  `wabaLegacy=${wabaLegacyPhones.length}`,
 );

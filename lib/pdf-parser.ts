@@ -28,17 +28,20 @@ function extractWhatsappNumber(text: string): string | null {
 
 function extractChannelLines(text: string): ParsedInvoiceLine[] {
   const lines: ParsedInvoiceLine[] = [];
-  // Produção usa "Basic WABA | 55…"; outras faturas usam "Basic WhatsApp Channel | 55…".
+  // "Basic WABA | 55…" ou "Basic WhatsApp Channel | 55…".
+  // Layout novo: qty unit net vat USD amount USD
+  // Layout antigo: qty unit amount USD
   const pattern =
-    /Basic\s+(?:WhatsApp\s+Channel|WABA)\s*\|\s*(\d{10,15})[\s\S]{0,160}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/gi;
+    /Basic\s+(WhatsApp\s+Channel|WABA)\s*\|\s*(\d{10,15})[\s\S]{0,200}?(?:([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD|([\d.,]+)\s+([\d.,]+)\s+([-\d.,]+)\s+USD)/gi;
 
   for (const match of text.matchAll(pattern)) {
-    const phone = match[1];
-    const quantity = parseAmount(match[2]);
-    const unitPrice = parseAmount(match[3]);
-    const amount = parseAmount(match[6]);
+    const labelKind = match[1];
+    const phone = match[2];
+    const quantity = parseAmount(match[3] ?? match[8] ?? "1");
+    const unitPrice = parseAmount(match[4] ?? match[9] ?? "0");
+    const amount = parseAmount(match[7] ?? match[10] ?? "");
     if (!phone || !Number.isFinite(amount)) continue;
-    const label = /Basic\s+WABA\s*\|/i.test(match[0])
+    const label = /WABA/i.test(labelKind ?? "")
       ? "Basic WABA"
       : "Basic WhatsApp Channel";
     lines.push({
@@ -91,12 +94,16 @@ function extractFeeLine(
 ): ParsedInvoiceLine | null {
   if (!/Transaction Fee/i.test(text)) return null;
 
-  const feeMatch = text.match(
-    /Transaction Fee[\s\S]{0,120}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/i,
-  );
+  const feeMatch =
+    text.match(
+      /Transaction Fee[\s\S]{0,120}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/i,
+    ) ??
+    text.match(
+      /Transaction Fee[\s\S]{0,120}?([\d.,]+)\s+([\d.,]+)\s+([-\d.,]+)\s+USD/i,
+    );
   if (!feeMatch) return null;
 
-  const amount = parseAmount(feeMatch[5]);
+  const amount = parseAmount(feeMatch[5] ?? feeMatch[3]);
   if (!Number.isFinite(amount)) return null;
 
   return {
