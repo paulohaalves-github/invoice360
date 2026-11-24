@@ -28,8 +28,9 @@ function extractWhatsappNumber(text: string): string | null {
 
 function extractChannelLines(text: string): ParsedInvoiceLine[] {
   const lines: ParsedInvoiceLine[] = [];
+  // Produção usa "Basic WABA | 55…"; outras faturas usam "Basic WhatsApp Channel | 55…".
   const pattern =
-    /Basic\s+WhatsApp\s+Channel\s*\|\s*(\d{10,15})[\s\S]{0,160}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/gi;
+    /Basic\s+(?:WhatsApp\s+Channel|WABA)\s*\|\s*(\d{10,15})[\s\S]{0,160}?([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+USD\s+([-\d.,]+)\s+USD/gi;
 
   for (const match of text.matchAll(pattern)) {
     const phone = match[1];
@@ -37,9 +38,12 @@ function extractChannelLines(text: string): ParsedInvoiceLine[] {
     const unitPrice = parseAmount(match[3]);
     const amount = parseAmount(match[6]);
     if (!phone || !Number.isFinite(amount)) continue;
+    const label = /Basic\s+WABA\s*\|/i.test(match[0])
+      ? "Basic WABA"
+      : "Basic WhatsApp Channel";
     lines.push({
       whatsappNumber: phone,
-      description: `Basic WhatsApp Channel | ${phone}`,
+      description: `${label} | ${phone}`,
       lineType: "other",
       quantity: Number.isFinite(quantity) ? quantity : 1,
       unitPrice: Number.isFinite(unitPrice) ? unitPrice : amount,
